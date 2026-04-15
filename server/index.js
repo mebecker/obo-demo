@@ -5,6 +5,20 @@ const jwt = require("jsonwebtoken");
 const jwksRsa = require("jwks-rsa");
 const { ConfidentialClientApplication } = require("@azure/msal-node");
 
+// ── Validate required environment variables ─────────────────────
+const requiredEnvVars = [
+  "TENANT_ID",
+  "SERVER_CLIENT_ID",
+  "SERVER_CLIENT_SECRET",
+  "FABRIC_WORKSPACE_ID",
+  "FABRIC_DATASET_ID",
+];
+const missing = requiredEnvVars.filter((v) => !process.env[v]);
+if (missing.length) {
+  console.error(`Missing required environment variables: ${missing.join(", ")}`);
+  process.exit(1);
+}
+
 const app = express();
 app.use(cors({ origin: "http://localhost:3000" }));
 app.use(express.json());
@@ -77,17 +91,9 @@ app.post("/api/query", validateToken, async (req, res) => {
     };
     const oboResponse = await cca.acquireTokenOnBehalfOf(oboRequest);
 
-    // Debug: log token audience & scopes (remove in production)
-    const [, payload] = oboResponse.accessToken.split(".");
-    const claims = JSON.parse(Buffer.from(payload, "base64").toString());
-    console.log("OBO token aud:", claims.aud);
-    console.log("OBO token scp:", claims.scp);
-    console.log("OBO token appid:", claims.appid);
-
     // 2. Call the Fabric / Power BI REST API to execute the DAX query
     const workspaceId = process.env.FABRIC_WORKSPACE_ID;
     const datasetId = process.env.FABRIC_DATASET_ID;
-    console.log("Calling Fabric API — workspace:", workspaceId, "dataset:", datasetId);
     const url = `https://api.powerbi.com/v1.0/myorg/groups/${workspaceId}/datasets/${datasetId}/executeQueries`;
 
     const fabricRes = await fetch(url, {
@@ -111,7 +117,7 @@ app.post("/api/query", validateToken, async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error("OBO / Fabric error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to execute query" });
   }
 });
 
