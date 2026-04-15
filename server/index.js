@@ -1,6 +1,8 @@
 require("dotenv").config({ path: "../.env" });
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
+const jwksRsa = require("jwks-rsa");
 const { ConfidentialClientApplication } = require("@azure/msal-node");
 
 const app = express();
@@ -17,18 +19,51 @@ const msalConfig = {
 };
 const cca = new ConfidentialClientApplication(msalConfig);
 
+// ── JWKS client for fetching Microsoft signing keys ─────────────
+const jwksClient = jwksRsa({
+  jwksUri: `https://login.microsoftonline.com/${process.env.TENANT_ID}/discovery/v2.0/keys`,
+  cache: true,
+  cacheMaxAge: 600000, // 10 minutes
+  rateLimit: true,
+});
+
+function getSigningKey(header, callback) {
+  jwksClient.getSigningKey(header.kid, (err, key) => {
+    if (err) return callback(err);
+    callback(null, key.getPublicKey());
+  });
+}
+
 // ── Middleware: validate incoming bearer token ──────────────────
-function extractToken(req, res, next) {
+function validateToken(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Missing or invalid Authorization header" });
   }
-  req.userToken = authHeader.split(" ")[1];
-  next();
+  const token = authHeader.split(" ")[1];
+
+  const verifyOptions = {
+    audience: `api://${process.env.SERVER_CLIENT_ID}`,
+    issuer: [
+      `https://login.microsoftonline.com/${process.env.TENANT_ID}/v2.0`,
+      `https://sts.windows.net/${process.env.TENANT_ID}/`,
+    ],
+    algorithms: ["RS256"],
+  };
+
+  jwt.verify(token, getSigningKey, verifyOptions, (err, decoded) => {
+    if (err) {
+      console.error("JWT validation failed:", err.message);
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    req.userToken = token;
+    req.tokenClaims = decoded;
+    next();
+  });
 }
 
 // ── POST /api/query — execute a DAX query via Fabric REST API ──
-app.post("/api/query", extractToken, async (req, res) => {
+app.post("/api/query", validateToken, async (req, res) => {
   const { query } = req.body;
   if (!query) {
     return res.status(400).json({ error: "A DAX query is required in the request body" });

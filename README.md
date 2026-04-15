@@ -260,7 +260,7 @@ TOPN(
 
 - **Never commit `.env` files** — they contain secrets. The `.gitignore` excludes them.
 - **Use certificates instead of client secrets** in production for stronger security.
-- **Validate tokens** on the backend — this demo extracts the Bearer token but does not verify the JWT signature. In production, validate issuer, audience, and expiry using a library like `jsonwebtoken` with JWKS.
+- **Validate tokens** on the backend — the server validates the JWT signature, issuer, audience, and expiry using `jsonwebtoken` with Microsoft's JWKS endpoint.
 - **Use HTTPS** in any non-localhost deployment.
 - The debug logging in `server/index.js` decodes the access token for troubleshooting — **remove it before deploying to production**.
 
