@@ -97,7 +97,53 @@ If you used a single registration, the SPA would need direct access to Power BI 
 
 ## Entra ID Setup
 
-### 1. Backend API app registration (confidential client)
+### Option A: Automated Setup (recommended)
+
+The setup scripts create both app registrations, configure scopes, permissions, and known-client authorization, then write the `.env` files automatically.
+
+**Prerequisites:**
+
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) installed and logged in (`az login`)
+- `jq` installed (bash script only — not needed for PowerShell)
+- Sufficient Entra ID permissions (Application Developer + Privileged Role Admin for admin consent)
+
+You'll need your **Fabric workspace ID** and **semantic model (dataset) ID** — both are GUIDs found in the Fabric portal URL.
+
+**Bash (Linux / macOS / WSL):**
+
+```bash
+./setup.sh <FABRIC_WORKSPACE_ID> <FABRIC_DATASET_ID>
+```
+
+**PowerShell (Windows / cross-platform):**
+
+```powershell
+.\setup.ps1 -FabricWorkspaceId "<FABRIC_WORKSPACE_ID>" -FabricDatasetId "<FABRIC_DATASET_ID>"
+```
+
+The script will:
+
+1. Create the **backend API** app registration (`obo-demo-api`) with:
+   - An `access_as_user` scope exposed under `api://<client-id>`
+   - A 1-year client secret
+   - Power BI `Dataset.Read.All` delegated permission (with admin consent)
+2. Create the **SPA** app registration (`obo-demo-spa`) with:
+   - A SPA platform redirect URI (`http://localhost:3000`)
+   - Permission to call `obo-demo-api/access_as_user`
+3. Add the SPA as a **known (pre-authorized) client** of the backend API
+4. Write `/.env` and `/client/.env` with all the correct values
+
+> **Note:** If admin consent fails (requires Global Admin or Privileged Role Admin), the script will warn you. Grant consent manually in **Azure Portal → App registrations → obo-demo-api → API permissions → Grant admin consent**.
+
+After the script completes, skip ahead to [Running](#running).
+
+---
+
+### Option B: Manual Setup
+
+If you prefer to create the app registrations manually in the Azure Portal, follow the steps below.
+
+#### 1. Backend API app registration (confidential client)
 
 Create a new app registration in **Azure Portal → Entra ID → App registrations → New registration**:
 
@@ -137,7 +183,7 @@ After creation, configure three things:
 > **Why `Dataset.Read.All` and not `.default`?**  
 > The OBO flow requires _specific delegated scopes_, not the `.default` shorthand. Using `.default` in an OBO request causes Entra ID to issue a token with application-level permissions, which Fabric's `executeQueries` endpoint rejects because it needs a delegated (user-context) token to open the MSOLAP connection.
 
-### 2. Frontend SPA app registration (public client)
+#### 2. Frontend SPA app registration (public client)
 
 Create another app registration:
 
@@ -156,7 +202,7 @@ After creation:
 
 > **Note:** No client secret is created for the SPA — it is a public client and uses PKCE for security instead.
 
-### 3. Authorize the SPA as a known client
+#### 3. Authorize the SPA as a known client
 
 This step enables the SPA to request the backend's scope _without a separate admin-consent prompt_:
 
@@ -262,7 +308,6 @@ TOPN(
 - **Use certificates instead of client secrets** in production for stronger security.
 - **Validate tokens** on the backend — the server validates the JWT signature, issuer, audience, and expiry using `jsonwebtoken` with Microsoft's JWKS endpoint.
 - **Use HTTPS** in any non-localhost deployment.
-- The debug logging in `server/index.js` decodes the access token for troubleshooting — **remove it before deploying to production**.
 
 ---
 
