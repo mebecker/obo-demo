@@ -1,0 +1,8 @@
+{
+  "name": "obo-demo",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ]
+}
